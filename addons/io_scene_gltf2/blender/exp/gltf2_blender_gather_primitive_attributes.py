@@ -223,10 +223,10 @@ def __gather_face_maps(blender_primitive, export_settings):
     attributes = {}
     if export_settings['gltf_face_maps']:
         for key in blender_primitive["attributes"]:
-            if key == '_FACEMAPS':
+            if key.startswith('_FACE_MAP_'):
                 attributes[key] = array_to_accessor(
                     blender_primitive["attributes"][key],
-                    component_type=gltf2_io_constants.ComponentType.Float,
+                    component_type=gltf2_io_constants.ComponentType.UnsignedByte,
                     data_type=gltf2_io_constants.DataType.Scalar,
                 )
     return attributes

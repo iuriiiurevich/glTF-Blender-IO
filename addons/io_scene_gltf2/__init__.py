@@ -1181,11 +1181,7 @@ class ImportGLTF2(Operator, ImportHelper):
         preferences = bpy.context.preferences
         for addon_name in preferences.addons.keys():
             try:
-                if hasattr(
-                        sys.modules[addon_name],
-                        'glTF2ImportUserExtension') or hasattr(
-                        sys.modules[addon_name],
-                        'glTF2ImportUserExtensions'):
+                if hasattr(sys.modules[addon_name], 'glTF2ImportUserExtension') or hasattr(sys.modules[addon_name], 'glTF2ImportUserExtensions'):
                     importer_extension_panel_unregister_functors.append(sys.modules[addon_name].register_panel())
             except Exception:
                 pass
@@ -1296,7 +1292,6 @@ class GLTF_AddonPreferences(bpy.types.AddonPreferences):
         row = layout.row()
         row.prop(self, "settings_node_ui", text="Shader Editor Add-ons")
         row.prop(self, "KHR_materials_variants_ui", text="Material Variants")
-
 
 def menu_func_import(self, context):
     self.layout.operator(ImportGLTF2.bl_idname, text='glTF 2.0 (.glb/.gltf)')

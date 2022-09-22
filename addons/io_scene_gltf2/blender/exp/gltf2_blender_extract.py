@@ -105,6 +105,7 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
     use_face_maps = export_settings['gltf_face_maps'] and blender_mesh.face_maps
 
     # Fetch vert positions and bone data (joint,weights)
+    
     locs, morph_locs = __get_positions(blender_mesh, key_blocks, armature, blender_object, export_settings)
     if skin:
         vert_bones, num_joint_sets, need_neutral_bone = __get_bone_data(blender_mesh, skin, blender_vertex_groups)

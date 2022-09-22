@@ -50,6 +50,18 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
     if export_settings[gltf2_blender_export_keys.COLORS]:
         color_max = len(blender_mesh.vertex_colors)
 
+    colors_attributes = []
+    rendered_color_idx = blender_mesh.attributes.render_color_index
+
+    if color_max > 0:
+        colors_attributes.append(rendered_color_idx)
+        # Then find other ones
+        colors_attributes.extend([
+            i for i in range(len(blender_mesh.color_attributes)) if i != rendered_color_idx \
+                and blender_mesh.vertex_colors.find(blender_mesh.color_attributes[i].name) != -1
+        ])
+
+
     armature = None
     skin = None
     if blender_vertex_groups and export_settings[gltf2_blender_export_keys.SKINS]:
@@ -80,7 +92,8 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
     use_morph_tangents = use_morph_normals and use_tangents and export_settings[gltf2_blender_export_keys.MORPH_TANGENT]
 
     key_blocks = []
-    if blender_mesh.shape_keys and export_settings[gltf2_blender_export_keys.MORPH]:
+    # Shape Keys can't be retrieve when using Apply Modifiers (Blender/bpy limitation)
+    if export_settings[gltf2_blender_export_keys.APPLY] is False and blender_mesh.shape_keys and export_settings[gltf2_blender_export_keys.MORPH]:
         key_blocks = [
             key_block
             for key_block in blender_mesh.shape_keys.key_blocks
@@ -122,7 +135,7 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
         dot_fields += [('tx', np.float32), ('ty', np.float32), ('tz', np.float32), ('tw', np.float32)]
     for uv_i in range(tex_coord_max):
         dot_fields += [('uv%dx' % uv_i, np.float32), ('uv%dy' % uv_i, np.float32)]
-    for col_i in range(color_max):
+    for col_i, _ in enumerate(colors_attributes):
         dot_fields += [
             ('color%dr' % col_i, np.float32),
             ('color%dg' % col_i, np.float32),
@@ -177,8 +190,12 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
         dots['uv%dy' % uv_i] = uvs[:, 1]
         del uvs
 
-    for col_i in range(color_max):
-        colors = __get_colors(blender_mesh, col_i)
+    colors_types = []
+    for col_i, blender_col_i in enumerate(colors_attributes):
+        colors, colors_type, domain = __get_colors(blender_mesh, col_i, blender_col_i)
+        if domain == "POINT":
+            colors = colors[dots['vertex_index']]
+        colors_types.append(colors_type)
         dots['color%dr' % col_i] = colors[:, 0]
         dots['color%dg' % col_i] = colors[:, 1]
         dots['color%db' % col_i] = colors[:, 2]
@@ -268,13 +285,16 @@ def extract_primitives(blender_mesh, uuid_for_skined_data, blender_vertex_groups
             uvs[:, 1] = prim_dots['uv%dy' % tex_coord_i]
             attributes['TEXCOORD_%d' % tex_coord_i] = uvs
 
-        for color_i in range(color_max):
+        for color_i, _ in enumerate(colors_attributes):
             colors = np.empty((len(prim_dots), 4), dtype=np.float32)
             colors[:, 0] = prim_dots['color%dr' % color_i]
             colors[:, 1] = prim_dots['color%dg' % color_i]
             colors[:, 2] = prim_dots['color%db' % color_i]
             colors[:, 3] = prim_dots['color%da' % color_i]
-            attributes['COLOR_%d' % color_i] = colors
+            attributes['COLOR_%d' % color_i] = {}
+            attributes['COLOR_%d' % color_i]["data"] = colors
+
+            attributes['COLOR_%d' % color_i]["norm"] = colors_types[color_i] == "BYTE_COLOR"
 
         if skin:
             joints = [[] for _ in range(num_joint_sets)]
@@ -545,20 +565,15 @@ def __get_uvs(blender_mesh, uv_i):
     return uvs
 
 
-def __get_colors(blender_mesh, color_i):
-    layer = blender_mesh.vertex_colors[color_i]
-    colors = np.empty(len(blender_mesh.loops) * 4, dtype=np.float32)
-    layer.data.foreach_get('color', colors)
-    colors = colors.reshape(len(blender_mesh.loops), 4)
-
-    # sRGB -> Linear
-    rgb = colors[:, :-1]
-    not_small = rgb >= 0.04045
-    small_result = np.where(rgb < 0.0, 0.0, rgb * (1.0 / 12.92))
-    large_result = np.power((rgb + 0.055) * (1.0 / 1.055), 2.4, where=not_small)
-    rgb[:] = np.where(not_small, large_result, small_result)
-
-    return colors
+def __get_colors(blender_mesh, color_i, blender_color_i):
+    if blender_mesh.color_attributes[blender_color_i].domain == "POINT":
+        colors = np.empty(len(blender_mesh.vertices) * 4, dtype=np.float32) #POINT
+    else:
+        colors = np.empty(len(blender_mesh.loops) * 4, dtype=np.float32) #CORNER
+    blender_mesh.color_attributes[blender_color_i].data.foreach_get('color', colors)
+    colors = colors.reshape(-1, 4)
+    # colors are already linear, no need to switch color space
+    return colors, blender_mesh.color_attributes[blender_color_i].data_type, blender_mesh.color_attributes[blender_color_i].domain
 
 
 def __get_bone_data(blender_mesh, skin, blender_vertex_groups):
